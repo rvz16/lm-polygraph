@@ -77,3 +77,4 @@ from .focus import Focus, FocusClaim
 from .kernel_language_entropy import KernelLanguageEntropy
 from .luq import LUQ
 from .eigenscore import EigenScore
+from .bayespe import BayesPEZeroShot, BayesPEFewShot
