@@ -1,11 +1,11 @@
 import torch
 import numpy as np
 
-from typing import Dict, List, Tuple
+from typing import Dict, List, Tuple, Union
 
 from .stat_calculator import StatCalculator
 from .embeddings import get_embeddings_from_output
-from lm_polygraph.utils.model import WhiteboxModel, BlackboxModel
+from lm_polygraph.model_adapters import WhiteboxModel, BlackboxModel, WhiteboxModelvLLM
 
 
 class OutputWrapper:
@@ -49,13 +49,28 @@ class BlackboxSamplingGenerationCalculator(StatCalculator):
         Returns:
             Dict[str, np.ndarray]: dictionary with List[List[str]] sampled texts at 'sample_texts' key.
         """
-
         if isinstance(model, BlackboxModel):
             samples = model.generate_texts(
                 input_texts=texts,
                 max_new_tokens=max_new_tokens,
                 n=self.samples_n,
             )
+
+            final_samples = [[] for _ in range(len(texts))]
+
+            for i, s in enumerate(samples):
+                final_samples[i].extend(s)
+                missing = self.samples_n - len(s)
+                if missing > 0:
+                    extra_samples = model.generate_texts(
+                        input_texts=[texts[i]] * missing,
+                        max_new_tokens=max_new_tokens,
+                        n=missing,
+                    )
+                    if isinstance(extra_samples[0], str):
+                        extra_samples = [extra_samples]
+                    final_samples[i].extend(extra_samples[0])
+            samples = final_samples
         else:
             samples = [[] for _ in range(len(texts))]
             out = model.generate_texts(
@@ -86,6 +101,8 @@ def _gen_samples(n_samples, model, batch, **kwargs):
         for k in range(n_samples):
             out = model.generate(**batch, **kwargs)
             cur_logits = torch.stack(out.scores, dim=1)
+            if model.model_type == "vLLMCausalLM":
+                cur_logits = cur_logits.transpose(1, 0)
             if model.model_type == "CausalLM":
                 embeddings.append(
                     {
@@ -136,7 +153,7 @@ class SamplingGenerationCalculator(StatCalculator):
         self,
         dependencies: Dict[str, np.array],
         texts: List[str],
-        model: WhiteboxModel,
+        model: Union[WhiteboxModel, WhiteboxModelvLLM],
         max_new_tokens: int = 100,
     ) -> Dict[str, np.ndarray]:
         """
@@ -206,42 +223,49 @@ class SamplingGenerationCalculator(StatCalculator):
             tokens[int(i / self.samples_n)].append(toks)
             texts[int(i / self.samples_n)].append(model.tokenizer.decode(toks))
 
-        out = OutputWrapper()
-        batch_size = len(batch["input_ids"])
-        embeddings_last_token = [[] for _ in range(batch_size)]
-
-        for sample_embeddings in embeddings:
-            if model.model_type == "CausalLM":
-                out.hidden_states = sample_embeddings["sample_embeddings_all_decoder"]
-            elif model.model_type == "Seq2SeqLM":
-                out.decoder_hidden_states = sample_embeddings[
-                    "sample_embeddings_all_decoder"
-                ]
-                out.encoder_hidden_states = sample_embeddings[
-                    "sample_embeddings_all_encoder"
-                ]
-            _, cur_token_embeddings = get_embeddings_from_output(
-                out,
-                batch,
-                model.model_type,
-                level="token",
-                hidden_layer=int(model.model.config.num_hidden_layers // 2),
-            )
-
-            for i in range(batch_size):
-                if len(cur_token_embeddings.shape) > 2:
-                    embeddings_last_token[i].append(
-                        cur_token_embeddings[i, -1].cpu().detach().numpy()
-                    )
-                else:
-                    embeddings_last_token[i].append(
-                        cur_token_embeddings[i].cpu().detach().numpy()
-                    )
-
-        return {
+        result_dict = {
             "sample_log_likelihoods": log_likelihoods,
             "sample_log_probs": log_probs,
             "sample_tokens": tokens,
             "sample_texts": texts,
-            "sample_embeddings": embeddings_last_token,
         }
+
+        if model.model_type != "vLLMCausalLM":
+            out = OutputWrapper()
+            batch_size = len(batch["input_ids"])
+            embeddings_last_token = [[] for _ in range(batch_size)]
+
+            for sample_embeddings in embeddings:
+                if model.model_type == "CausalLM":
+                    out.hidden_states = sample_embeddings[
+                        "sample_embeddings_all_decoder"
+                    ]
+                elif model.model_type == "Seq2SeqLM":
+                    out.decoder_hidden_states = sample_embeddings[
+                        "sample_embeddings_all_decoder"
+                    ]
+                    out.encoder_hidden_states = sample_embeddings[
+                        "sample_embeddings_all_encoder"
+                    ]
+                _, cur_token_embeddings = get_embeddings_from_output(
+                    out,
+                    batch,
+                    model.model_type,
+                    level="token",
+                    hidden_layer=int(model.model.config.num_hidden_layers // 2),
+                )
+
+                if cur_token_embeddings.dtype == torch.bfloat16:
+                    cur_token_embeddings = cur_token_embeddings.to(torch.float16)
+
+                for i in range(batch_size):
+                    if len(cur_token_embeddings.shape) > 2:
+                        embeddings_last_token[i].append(
+                            cur_token_embeddings[i, -1].cpu().detach().numpy()
+                        )
+                    else:
+                        embeddings_last_token[i].append(
+                            cur_token_embeddings[i].cpu().detach().numpy()
+                        )
+            result_dict["sample_embeddings"] = embeddings_last_token
+        return result_dict

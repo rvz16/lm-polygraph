@@ -18,6 +18,7 @@ class OpenAIFactCheck(GenerationMetric):
 
     def __init__(
         self,
+        llm_url: str = None,
         openai_model: str = "gpt-4o",
         cache_path: str = os.path.expanduser("~") + "/.cache",
         language: str = "en",
@@ -27,9 +28,19 @@ class OpenAIFactCheck(GenerationMetric):
             str, str
         ] = OPENAI_FACT_CHECK_SUMMARIZE_PROMPT,
         n_threads: int = 1,
+        timeout: int = 600,
+        max_tokens: int = None,
+        rewrite_cache: bool = False,
     ):
         super().__init__(["input_texts"], "claim")
-        self.openai_chat = OpenAIChat(openai_model=openai_model, cache_path=cache_path)
+        self.openai_chat = OpenAIChat(
+            base_url=llm_url,
+            openai_model=openai_model,
+            cache_path=cache_path,
+            timeout=timeout,
+            max_tokens=max_tokens,
+            rewrite_cache=rewrite_cache,
+        )
         self.language = language
         self.progress_bar = progress_bar
         self.fact_check_prompts = fact_check_prompts

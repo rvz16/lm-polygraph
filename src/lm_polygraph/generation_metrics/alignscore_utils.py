@@ -20,6 +20,7 @@ from torch.optim import AdamW
 import nltk
 import torch
 import torch.nn as nn
+from torch.optim import AdamW
 from sklearn.metrics import f1_score
 from dataclasses import dataclass
 from nltk.tokenize import sent_tokenize

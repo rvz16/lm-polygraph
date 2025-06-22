@@ -7,6 +7,7 @@ def load_simple_estimators(name: str, config):
         MaximumSequenceProbability,
         Perplexity,
         MeanTokenEntropy,
+        SelfCertainty,
         MeanPointwiseMutualInformation,
         MeanConditionalPointwiseMutualInformation,
         ClaimConditionedProbability,
@@ -41,11 +42,16 @@ def load_simple_estimators(name: str, config):
         Focus,
         PerplexityClaim,
         MaxTokenEntropyClaim,
+        SelfCertaintyClaim,
         PointwiseMutualInformationClaim,
         PTrueClaim,
         ClaimConditionedProbabilityClaim,
         RandomBaselineClaim,
+        FrequencyScoringClaim,
+        TokenSARClaim,
         FocusClaim,
+        AttentionScore,
+        AttentionScoreClaim,
     ]
 
     try:
