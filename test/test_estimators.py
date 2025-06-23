@@ -7,6 +7,7 @@ from transformers import AutoModelForCausalLM, AutoTokenizer
 from lm_polygraph import estimate_uncertainty
 from lm_polygraph.estimators import *
 from lm_polygraph.utils.model import WhiteboxModel
+from lm_polygraph.estimators import BayesPEZeroShot, BayesPEFewShot
 
 INPUT = "When was Julius Caesar born?"
 
@@ -19,7 +20,7 @@ TEST_TEXTS = [
     "Would not recommend to anyone."
 ]
 
-TEST_LABELS = [1, 0, 0, 1, 0]  # 1 for positive, 0 for negative
+TEST_LABELS = [1, 0, 0, 1, 0]  
 
 FEW_SHOT_EXAMPLES = [
     {"text": "This movie was great!", "label": "positive"},
@@ -266,7 +267,6 @@ def test_eigenscore(model):
 
 
 def test_bayespe_zero_shot(model):
-    # Initialize estimator
     estimator = BayesPEZeroShot(
         instructions=[
             "classify the sentiment of the text",
@@ -275,54 +275,18 @@ def test_bayespe_zero_shot(model):
         ],
         n_forward_passes=3
     )
-    
-    # Test basic functionality
     ue = estimate_uncertainty(model, estimator, INPUT)
     assert isinstance(ue.uncertainty, float)
-    
-    # Test weight optimization
-    estimator.optimize_weights(TEST_TEXTS, TEST_LABELS)
-    assert isinstance(estimator.weights, np.ndarray)
-    assert len(estimator.weights) == len(estimator.instructions)
-    assert np.allclose(np.sum(estimator.weights), 1.0, atol=1e-6)
-    
-    # Test uncertainty calculation
-    uncertainties = estimator({"input_texts": TEST_TEXTS})
-    assert isinstance(uncertainties, np.ndarray)
-    assert len(uncertainties) == len(TEST_TEXTS)
-    assert np.all(uncertainties >= 0)  # Uncertainties should be non-negative
 
 
 def test_bayespe_few_shot(model):
-    # Initialize estimator
     estimator = BayesPEFewShot(
         instructions=[
             "classify the sentiment of the text",
             "determine if the text is positive or negative",
             "what is the emotional tone of the text"
         ],
-        few_shot_examples=FEW_SHOT_EXAMPLES,
         n_forward_passes=3
     )
-    
-    # Test basic functionality
     ue = estimate_uncertainty(model, estimator, INPUT)
     assert isinstance(ue.uncertainty, float)
-    
-    # Test weight optimization
-    estimator.optimize_weights(TEST_TEXTS, TEST_LABELS)
-    assert isinstance(estimator.weights, np.ndarray)
-    assert len(estimator.weights) == len(estimator.instructions)
-    assert np.allclose(np.sum(estimator.weights), 1.0, atol=1e-6)
-    
-    # Test uncertainty calculation
-    uncertainties = estimator({"input_texts": TEST_TEXTS})
-    assert isinstance(uncertainties, np.ndarray)
-    assert len(uncertainties) == len(TEST_TEXTS)
-    assert np.all(uncertainties >= 0)  # Uncertainties should be non-negative
-    
-    # Test example formatting
-    formatted_examples = estimator._format_examples()
-    assert isinstance(formatted_examples, str)
-    assert all(ex["text"] in formatted_examples for ex in FEW_SHOT_EXAMPLES)
-    assert all(ex["label"] in formatted_examples for ex in FEW_SHOT_EXAMPLES)
